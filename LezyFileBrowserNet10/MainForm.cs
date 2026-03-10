@@ -23,6 +23,7 @@ namespace LezyFileBrowser
         private int sortDirection;
         private bool inPlaceBrowsing;
         private bool noCache;
+        private bool noDupeCheck;
         private bool profileLog;
         private bool moveWithRobocopy;
         private int MAX_LIST_ITEMS;
@@ -132,8 +133,9 @@ namespace LezyFileBrowser
             okDir            = Env("X_OK_DIR");
             sortDirection    = int.Parse(Env("X_SORT_DIR", "1"));
             inPlaceBrowsing  = bool.Parse(Env("X_INPLACE_BROWSING", "false"));
-            noCache          = bool.Parse(Env("X_NO_CACHE",    "false"));
-            profileLog       = bool.Parse(Env("X_PROFILE_LOG", "false"));
+            noCache          = bool.Parse(Env("X_NO_CACHE",      "false"));
+            noDupeCheck      = bool.Parse(Env("X_NO_DUPE_CHECK", "false"));
+            profileLog       = bool.Parse(Env("X_PROFILE_LOG",   "false"));
             moveWithRobocopy = bool.Parse(Env("X_MOVE_WITH_ROBOCOPY", "true"));
             MAX_LIST_ITEMS   = int.Parse(Env("X_MAX_LIST_ITEMS", int.MaxValue.ToString()));
             MIN_FILE_SIZE_MB = long.Parse(Env("X_MIN_FILE_SIZE_MB", "99"));
@@ -213,6 +215,7 @@ namespace LezyFileBrowser
                 $"  Max list items   {(MAX_LIST_ITEMS == int.MaxValue ? "unlimited" : MAX_LIST_ITEMS.ToString())}\r\n" +
                 $"  In-place browse  {inPlaceBrowsing}\r\n" +
                 $"  No cache         {noCache}\r\n" +
+                $"  No dupe check    {noDupeCheck}\r\n" +
                 $"  Robocopy move    {moveWithRobocopy}\r\n" +
                 "  -----------------------------------------------------------------------\r\n"
             );
@@ -421,7 +424,12 @@ namespace LezyFileBrowser
             Dictionary<string, List<FileData>> dupeGroups;
             Dictionary<string, List<string>> similarGroups;
 
-            if (_groupsCachedForPaths != null && currentPaths.IsSubsetOf(_groupsCachedForPaths))
+            if (noDupeCheck)
+            {
+                dupeGroups    = new Dictionary<string, List<FileData>>(StringComparer.OrdinalIgnoreCase);
+                similarGroups = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            }
+            else if (_groupsCachedForPaths != null && currentPaths.IsSubsetOf(_groupsCachedForPaths))
             {
                 dupeGroups    = _cachedDupeGroups;
                 similarGroups = _cachedSimilarGroups;
@@ -446,7 +454,9 @@ namespace LezyFileBrowser
             }
 
             sw.Restart();
-            var alreadyInOk = FindAlreadySavedInOkDir();
+            var alreadyInOk = noDupeCheck
+                ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                : FindAlreadySavedInOkDir();
             ProfileLog($"  [profile] FindAlreadyInOk   {sw.ElapsedMilliseconds,6} ms  ({alreadyInOk.Count} matches)");
 
             return (lstDirs, totalSize, dupeGroups, alreadyInOk, similarGroups);

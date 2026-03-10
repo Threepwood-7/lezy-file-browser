@@ -2,6 +2,10 @@
 
 A fast, keyboard-driven Windows file manager for reviewing downloaded content (torrents, Usenet). Built with C# / WinForms on .NET 10.0 — no external dependencies.
 
+## Screenshot
+
+![LezyFileBrowser screenshot](screenshot.png)
+
 ## What it does
 
 You point it at a download directory. It lists everything above a configurable size threshold, lets you quickly play/save/delete items with single keystrokes, detects duplicate files and similar-named releases, and moves accepted files to a destination directory — optionally via robocopy for large transfers.
@@ -10,7 +14,7 @@ You point it at a download directory. It lists everything above a configurable s
 
 - Windows 10/11
 - [.NET 10.0 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (Desktop Runtime for WinForms)
-- Optional: [Everything](https://www.voidtools.com/) (for fast directory scanning via `Everything64.dll`)
+- Optional: [Everything](https://www.voidtools.com/) + [Everything SDK](https://www.voidtools.com/support/everything/sdk/) (for fast directory scanning via `Everything64.dll`)
 - Optional: MPlayer / MPC-HC / SMPlayer for media playback
 
 ## Configuration
@@ -32,6 +36,7 @@ Common optional settings:
 | `X_MOVE_WITH_ROBOCOPY` | `true` | Use robocopy instead of `Directory.Move` |
 | `X_MAX_LIST_ITEMS` | unlimited | Cap the list to N entries |
 | `X_NO_CACHE` | `false` | Skip the in-memory cache on every refresh |
+| `X_NO_DUPE_CHECK` | `false` | Disable all duplicate and similar-name detection (skips coloring and dupe-check passes) |
 | `PLAYER_PROCESS_NAMES` | `mplayer,mpc-hc64,smplayer` | Processes to track for focus management |
 | `VIDEO_EXTENSIONS` | `.mkv,.mp4,.avi,...` | Extensions treated as video |
 | `DUPE_CHECK_HEAD_MB` | `10` | Bytes compared at file start for duplicate detection |
