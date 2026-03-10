@@ -47,17 +47,17 @@ Common optional settings:
 
 | Key | Action |
 |---|---|
-| `Enter` | Launch selected item in media player |
+| `Enter` | Launch selected item (player 1) |
+| `F9` | Launch selected item (player 2 / alt) |
 | `Space` | Save — move to OK dir |
-| `Del` | Soft-delete (60-second undo window) |
-| `Shift+Del` | Delete parent directory |
-| `Ctrl+Z` | Undo pending soft-delete |
-| `F3` | Open Total Commander here |
-| `F4` / `Shift+F4` | SABnzbd / Usenet lookup |
+| `Del` / `\` / `Backspace` | Soft-delete item (60-second undo window) |
+| `Shift+Del` / `Shift+\` | Delete parent directory |
+| `Ctrl+Z` | Undo last pending soft-delete |
+| `F3` | Open in Total Commander |
+| `F4` / `Shift+F4` | SABnzbd / Usenet lookup (with / without suffix) |
 | `F5` / `Shift+F5` | Refresh / force refresh (bypass cache) |
 | `F6` | Search for selected item on torrent sites |
 | `F7` | Cycle sort: date → name → random |
-| `F9` | Launch with alternative player |
 | `F11` | Save for later (append to a text file in Documents) |
 
 ## Duplicate and similar-name detection

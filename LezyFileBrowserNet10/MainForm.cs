@@ -49,7 +49,7 @@ namespace LezyFileBrowser
         private int dupeCheckTailMb;
         private int similarNameMinTokens;
         private string[] videoExtensions;
-        private string scriptTcHere;
+
         private string scriptSabnzbd;
         private string browserExe;
         private string btSearchUrl1;
@@ -94,6 +94,7 @@ namespace LezyFileBrowser
         private void MainForm_Activated(object sender, EventArgs e)
         {
             if (loaded && lstFiles.Items.Count == 0) { RefreshItemsListing(); }
+            lstFiles.Focus();
         }
 
         private void AdjustColumnWidths()
@@ -150,7 +151,7 @@ namespace LezyFileBrowser
             similarNameMinTokens = int.Parse(ConfigurationManager.AppSettings["SIMILAR_NAME_MIN_TOKENS"]);
             videoExtensions      = ConfigurationManager.AppSettings["VIDEO_EXTENSIONS"]
                 .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-            scriptTcHere      = ConfigurationManager.AppSettings["SCRIPT_TC_HERE"];
+
             scriptSabnzbd     = ConfigurationManager.AppSettings["SCRIPT_SABNZBD"];
             browserExe        = ConfigurationManager.AppSettings["BROWSER_EXE"];
             btSearchUrl1      = ConfigurationManager.AppSettings["BT_SEARCH_URL_1"];
@@ -162,6 +163,8 @@ namespace LezyFileBrowser
             colorAlreadySaved   = ParseColor(ConfigurationManager.AppSettings["COLOR_ALREADY_SAVED"]);
             colorDupe           = ParseColor(ConfigurationManager.AppSettings["COLOR_DUPE"]);
             colorSimilarName    = ParseColor(ConfigurationManager.AppSettings["COLOR_SIMILAR_NAME"]);
+
+            // Validate required directories
 
             // Validate required directories
             if (string.IsNullOrWhiteSpace(inputDir) || string.IsNullOrWhiteSpace(okDir))
@@ -177,23 +180,28 @@ namespace LezyFileBrowser
 
             LogMessage(
                 "\r\n\r\n" +
-                "        F3       - TC Here Item" + "\r\n" +
-                "        F4       - SIR Item" + "\r\n" +
-                " LShift+F4       - SIR Item (no suffix)" + "\r\n" +
-                "        F5       - Refresh" + "\r\n" +
-                " LShift+F5       - Refresh Force (read from disk)" + "\r\n" +
-                "        F6       - BT Search" + "\r\n" +
-                "        F7       - Sort Toggle" + "\r\n" +
-                "        F9       - Launch with alt player" + "\r\n" +
-                "       F11       - Save for later in txt" + "\r\n" +
-                "       DEL       - Delete Item" + "\r\n" +
-                "LShift+DEL       - Delete Parent" + "\r\n" +
+                "      Enter       - Launch (player 1)" + "\r\n" +
+                "         F9       - Launch (player 2 / alt)" + "\r\n" +
+                "         F3       - Open in Total Commander" + "\r\n" +
+                "         F4       - SIR Item" + "\r\n" +
+                "  LShift+F4       - SIR Item (no suffix)" + "\r\n" +
+                "         F5       - Refresh" + "\r\n" +
+                "  LShift+F5       - Refresh (force read from disk)" + "\r\n" +
+                "         F6       - BT Search" + "\r\n" +
+                "         F7       - Sort Toggle (date / name / random)" + "\r\n" +
+                "        F11       - Save for later (txt)" + "\r\n" +
+                "      Space       - Save Item" + "\r\n" +
+                "  DEL / \\ / BS   - Delete Item" + "\r\n" +
+                "LShift+DEL / \\   - Delete Parent" + "\r\n" +
+                "     Ctrl+Z       - Undo last delete" + "\r\n" +
                 "\r\n\r\n"
                 );
 
 
             if (inPlaceBrowsing)
                 okDir = inputDir;
+
+            LoadCheckboxState();
 
             ulong inputFree, inputTotal, okFree, okTotal;
             Util.DriveFreeBytes(inputDir, out inputFree, out inputTotal);
@@ -572,7 +580,7 @@ namespace LezyFileBrowser
             _isRefreshing = false;
 
             if (autoplay && ckAutoplay.Checked)
-                LaunchItem(false, ckForceFullScreen.Checked);
+                LaunchItem(false, ckFullScreen.Checked);
         }
 
         private string SortLabel() =>
@@ -764,11 +772,12 @@ namespace LezyFileBrowser
                 tgt = lit.FileInfo.FullName;
             }
 
-            var piTC = new ProcessStartInfo(
-                "cmd.exe",
-                "/C \"" + scriptTcHere + "\" \"" + tgt + "\"");
-
-            piTC.WindowStyle = ProcessWindowStyle.Minimized;
+            var piTC = new ProcessStartInfo
+            {
+                FileName  = ConfigurationManager.AppSettings["TC_EXE"],
+                Arguments = $"/O 0 /T /L=\"{tgt}\"",
+                UseShellExecute = false,
+            };
 
             Process.Start(piTC);
         }
@@ -877,11 +886,46 @@ namespace LezyFileBrowser
             RefreshItemsListing();
         }
 
-        private void LaunchItem(bool useAltPlayer, bool forceFullScreen)
+        private static string RegSubKey(string dir) =>
+            @"Software\LezyFileBrowser\" +
+            dir.Replace(':', '_').Replace('\\', '_').Replace('/', '_');
+
+        private void LoadCheckboxState()
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RegSubKey(inputDir));
+            if (key != null)
+            {
+                ckFullScreen.Checked   = (string)key.GetValue("FullScreen",   "0") == "1";
+                ckOnTop.Checked        = (string)key.GetValue("OnTop",        "0") == "1";
+                ckKeepFocus.Checked    = (string)key.GetValue("KeepFocus",    "1") == "1";
+                ckAutoplay.Checked     = (string)key.GetValue("Autoplay",     "0") == "1";
+                ckShowDupesOnly.Checked = (string)key.GetValue("ShowDupesOnly", "0") == "1";
+            }
+            else
+            {
+                // First run for this inputDir — derive FullScreen from time-of-day window
+                int now      = DateTime.Now.Hour * 100 + DateTime.Now.Minute;
+                int fsBefore = int.Parse(ConfigurationManager.AppSettings["FS_HHMM_BEFORE"]);
+                int fsAfter  = int.Parse(ConfigurationManager.AppSettings["FS_HHMM_AFTER"]);
+                ckFullScreen.Checked = now < fsBefore || now >= fsAfter;
+            }
+        }
+
+        private void SaveCheckboxState()
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(RegSubKey(inputDir));
+            key.SetValue("FullScreen",    ckFullScreen.Checked    ? "1" : "0");
+            key.SetValue("OnTop",         ckOnTop.Checked         ? "1" : "0");
+            key.SetValue("KeepFocus",     ckKeepFocus.Checked     ? "1" : "0");
+            key.SetValue("Autoplay",      ckAutoplay.Checked      ? "1" : "0");
+            key.SetValue("ShowDupesOnly", ckShowDupesOnly.Checked ? "1" : "0");
+        }
+
+        private void LaunchItem(bool useAltPlayer, bool fullScreen)
         {
             if (HasSelection())
             {
-                fileActions.LaunchFile((lstFiles.SelectedItems[0].Tag as ListItemTag).FileInfo, useAltPlayer, forceFullScreen, this.Handle);
+                fileActions.LaunchFile((lstFiles.SelectedItems[0].Tag as ListItemTag).FileInfo, useAltPlayer, fullScreen, ckOnTop.Checked, ckKeepFocus.Checked, this.Handle);
             }
         }
 
@@ -1016,13 +1060,15 @@ namespace LezyFileBrowser
 
             if (e.KeyCode == Keys.Enter)
             {
-                LaunchItem(false, ckForceFullScreen.Checked);
+                LaunchItem(false, ckFullScreen.Checked);
 
                 return;
             }
 
             if (e.KeyCode == Keys.Delete || e.KeyCode == Keys.Back || e.KeyCode == Keys.OemBackslash || e.KeyCode == Keys.Oem5)
             {
+                e.SuppressKeyPress = true;
+
                 if (e.Shift)
                 {
                     DeleteParentItem();
@@ -1092,7 +1138,7 @@ namespace LezyFileBrowser
             if (e.KeyCode == Keys.F9)
             {
                 // launch with alternative player
-                LaunchItem(true, ckForceFullScreen.Checked);
+                LaunchItem(true, ckFullScreen.Checked);
 
                 return;
             }
@@ -1135,6 +1181,7 @@ namespace LezyFileBrowser
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
+            SaveCheckboxState();
             if (pendingDeletes.Count > 0)
             {
                 var toDelete = pendingDeletes.ToList();
@@ -1180,12 +1227,12 @@ namespace LezyFileBrowser
 
         private void lstFiles_MouseDoubleClick(object sender, MouseEventArgs e)
         {
-            LaunchItem(false, ckForceFullScreen.Checked);
+            LaunchItem(false, ckFullScreen.Checked);
         }
 
         private void btnLaunchItem_Click(object sender, EventArgs e)
         {
-            LaunchItem(false, ckForceFullScreen.Checked);
+            LaunchItem(false, ckFullScreen.Checked);
         }
     }
 

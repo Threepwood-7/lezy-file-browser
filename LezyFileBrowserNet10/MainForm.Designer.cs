@@ -49,7 +49,9 @@ namespace LezyFileBrowser
             this.btnDeleteDir = new System.Windows.Forms.Button();
             this.txtOkDir = new System.Windows.Forms.TextBox();
             this.txtInputDir = new System.Windows.Forms.TextBox();
-            this.ckForceFullScreen = new System.Windows.Forms.CheckBox();
+            this.ckFullScreen = new System.Windows.Forms.CheckBox();
+            this.ckKeepFocus = new System.Windows.Forms.CheckBox();
+            this.ckOnTop = new System.Windows.Forms.CheckBox();
             this.btnExit = new System.Windows.Forms.Button();
             this.statusStrip1 = new System.Windows.Forms.StatusStrip();
             this.tsSpring = new System.Windows.Forms.ToolStripStatusLabel();
@@ -159,7 +161,9 @@ namespace LezyFileBrowser
             this.grpBottom.Controls.Add(this.btnDeleteDir);
             this.grpBottom.Controls.Add(this.txtOkDir);
             this.grpBottom.Controls.Add(this.txtInputDir);
-            this.grpBottom.Controls.Add(this.ckForceFullScreen);
+            this.grpBottom.Controls.Add(this.ckFullScreen);
+            this.grpBottom.Controls.Add(this.ckKeepFocus);
+            this.grpBottom.Controls.Add(this.ckOnTop);
             this.grpBottom.Controls.Add(this.btnExit);
             this.grpBottom.Dock = System.Windows.Forms.DockStyle.Bottom;
             this.grpBottom.Location = new System.Drawing.Point(0, 551);
@@ -195,7 +199,7 @@ namespace LezyFileBrowser
             this.ckAutoplay.AutoSize = true;
             this.ckAutoplay.Checked = true;
             this.ckAutoplay.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.ckAutoplay.Location = new System.Drawing.Point(121, 19);
+            this.ckAutoplay.Location = new System.Drawing.Point(366, 19);
             this.ckAutoplay.Name = "ckAutoplay";
             this.ckAutoplay.Size = new System.Drawing.Size(67, 17);
             this.ckAutoplay.TabIndex = 9;
@@ -205,7 +209,7 @@ namespace LezyFileBrowser
             // ckShowDupesOnly
             //
             this.ckShowDupesOnly.AutoSize = true;
-            this.ckShowDupesOnly.Location = new System.Drawing.Point(200, 19);
+            this.ckShowDupesOnly.Location = new System.Drawing.Point(486, 19);
             this.ckShowDupesOnly.Name = "ckShowDupesOnly";
             this.ckShowDupesOnly.Size = new System.Drawing.Size(100, 17);
             this.ckShowDupesOnly.TabIndex = 13;
@@ -289,15 +293,35 @@ namespace LezyFileBrowser
             this.txtInputDir.TabIndex = 2;
             this.txtInputDir.TabStop = false;
             //
-            // ckForceFullScreen
+            // ckFullScreen
             //
-            this.ckForceFullScreen.AutoSize = true;
-            this.ckForceFullScreen.Location = new System.Drawing.Point(6, 19);
-            this.ckForceFullScreen.Name = "ckForceFullScreen";
-            this.ckForceFullScreen.Size = new System.Drawing.Size(109, 17);
-            this.ckForceFullScreen.TabIndex = 1;
-            this.ckForceFullScreen.Text = "Force Ful&l Screen";
-            this.ckForceFullScreen.UseVisualStyleBackColor = true;
+            this.ckFullScreen.AutoSize = true;
+            this.ckFullScreen.Location = new System.Drawing.Point(6, 19);
+            this.ckFullScreen.Name = "ckFullScreen";
+            this.ckFullScreen.Size = new System.Drawing.Size(109, 17);
+            this.ckFullScreen.TabIndex = 1;
+            this.ckFullScreen.Text = "Ful&l Screen";
+            this.ckFullScreen.UseVisualStyleBackColor = true;
+            //
+            // ckKeepFocus
+            //
+            this.ckKeepFocus.AutoSize = true;
+            this.ckKeepFocus.Checked = true;
+            this.ckKeepFocus.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.ckKeepFocus.Location = new System.Drawing.Point(246, 19);
+            this.ckKeepFocus.Name = "ckKeepFocus";
+            this.ckKeepFocus.TabIndex = 2;
+            this.ckKeepFocus.Text = "&Keep Focus";
+            this.ckKeepFocus.UseVisualStyleBackColor = true;
+            //
+            // ckOnTop
+            //
+            this.ckOnTop.AutoSize = true;
+            this.ckOnTop.Location = new System.Drawing.Point(126, 19);
+            this.ckOnTop.Name = "ckOnTop";
+            this.ckOnTop.TabIndex = 3;
+            this.ckOnTop.Text = "&On Top";
+            this.ckOnTop.UseVisualStyleBackColor = true;
             //
             // btnExit
             //
@@ -390,7 +414,9 @@ namespace LezyFileBrowser
         private System.Windows.Forms.GroupBox grpBottom;
         private System.Windows.Forms.Button btnExit;
         private System.Windows.Forms.ColumnHeader colWod;
-        private System.Windows.Forms.CheckBox ckForceFullScreen;
+        private System.Windows.Forms.CheckBox ckFullScreen;
+        private System.Windows.Forms.CheckBox ckKeepFocus;
+        private System.Windows.Forms.CheckBox ckOnTop;
         private System.Windows.Forms.TextBox txtInputDir;
         private System.Windows.Forms.TextBox txtOkDir;
         private System.Windows.Forms.TextBox txtSelectedDir;

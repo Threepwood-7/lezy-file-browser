@@ -20,6 +20,9 @@ namespace LezyFileBrowser
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool CreateSymbolicLink(string lpSymlinkFileName, string lpTargetFileName, int dwFlags);
+
         // Called with a pre-fetched (cached) list of files in fi's directory.
         // Avoids a Directory.GetFiles call per file — callers should cache per-directory.
         public WorkOnFileOrDir ShouldWorkOnFileOrDir(FileData fi, FileData[] cachedDirFiles)
@@ -55,7 +58,7 @@ namespace LezyFileBrowser
             return ShouldWorkOnFileOrDir(fi, filesInDir);
         }
 
-        public void LaunchFile(FileData fi, bool useAltPlayer, bool forceFullScreen, IntPtr ownerHandle)
+        public void LaunchFile(FileData fi, bool useAltPlayer, bool fullScreen, bool onTop, bool keepFocus, IntPtr ownerHandle)
         {
             var videoExtensions = ConfigurationManager.AppSettings["VIDEO_EXTENSIONS"]
                 .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
@@ -63,33 +66,68 @@ namespace LezyFileBrowser
             var ext = Path.GetExtension(fi.Name).ToLower();
             if (!videoExtensions.Contains(ext)) return;
 
+            string targetPath = ResolvePlayerPath(fi.FullName);
+
+            string prefix = useAltPlayer ? "PLAYER_2" : "PLAYER_1";
+            string exe      = ConfigurationManager.AppSettings[$"{prefix}_EXE"];
+            string fsArg    = fullScreen ? " " + ConfigurationManager.AppSettings[$"{prefix}_FS_ARG"]     : "";
+            string topArg   = onTop      ? " " + ConfigurationManager.AppSettings[$"{prefix}_ON_TOP_ARG"] : "";
+            string winStyle = ConfigurationManager.AppSettings[$"{prefix}_WINDOW_STYLE"] ?? "Normal";
+            var windowStyle = Enum.TryParse<ProcessWindowStyle>(winStyle, true, out var ws) ? ws : ProcessWindowStyle.Normal;
+
+            string args;
             if (useAltPlayer)
-            {
-                Environment.SetEnvironmentVariable("X_USE_ALT_PLAYER", "1");
-            }
+                args = $"{fsArg}{topArg} \"{targetPath}\"".TrimStart();
             else
             {
-                Environment.SetEnvironmentVariable("X_USE_ALT_PLAYER", "0");
+                string baseArgs = ConfigurationManager.AppSettings["PLAYER_1_ARGS"];
+                args = $"{baseArgs}{fsArg}{topArg} \"{targetPath}\"";
             }
 
-            if (forceFullScreen)
+            KillPlayerProcesses();
+
+            var psi = new ProcessStartInfo
             {
-                Environment.SetEnvironmentVariable("X_FORCE_FULL_SCREEN", "1");
-            }
-            else
+                FileName = exe,
+                Arguments = args,
+                WindowStyle = windowStyle,
+                UseShellExecute = false,
+            };
+            var proc = Process.Start(psi);
+            if (proc != null)
             {
-                Environment.SetEnvironmentVariable("X_FORCE_FULL_SCREEN", "0");
+                try { proc.PriorityClass = ProcessPriorityClass.High; } catch { }
             }
 
-            Process.Start(
-               new ProcessStartInfo()
-               {
-                   FileName = fi.FullName,
-                   WindowStyle = ProcessWindowStyle.Minimized,
-                   UseShellExecute = true
-               });
+            if (keepFocus)
+                Task.Run(() => FocusPlayerWindow(ownerHandle));
+        }
 
-            Task.Run(() => FocusPlayerWindow(ownerHandle));
+        private void KillPlayerProcesses()
+        {
+            string[] names = ConfigurationManager.AppSettings["PLAYER_PROCESS_NAMES"]
+                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var name in names)
+            {
+                try
+                {
+                    foreach (var p in Process.GetProcessesByName(name.Trim()))
+                        p.Kill();
+                }
+                catch { }
+            }
+        }
+
+        // Creates a symlink in %TEMP% when the path exceeds Windows MAX_PATH (260).
+        private string ResolvePlayerPath(string fullPath)
+        {
+            int threshold = int.Parse(ConfigurationManager.AppSettings["LONG_PATH_THRESHOLD"]);
+            if (fullPath.Length <= threshold) return fullPath;
+
+            string linkPath = Path.Combine(Path.GetTempPath(), "tmp.mp4");
+            try { File.Delete(linkPath); } catch { }
+            CreateSymbolicLink(linkPath, fullPath, 0);
+            return linkPath;
         }
 
         private void FocusPlayerWindow(IntPtr ownerHandle)
@@ -107,7 +145,7 @@ namespace LezyFileBrowser
                 {
                     foreach (var name in playerProcessNames)
                     {
-                        var procs = Process.GetProcessesByName(name);
+                        var procs = Process.GetProcessesByName(name.Trim());
                         foreach (var p in procs)
                         {
                             if (p.MainWindowHandle != IntPtr.Zero)
