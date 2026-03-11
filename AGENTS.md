@@ -101,6 +101,7 @@ All settings are in `App.config` and can be overridden by environment variables 
 - **Dir-files cache:** `dirFilesCache` in `ComputeListData` — reduces `ShouldWorkOnFileOrDir` dir scans from O(files) to O(unique dirs).
 - **okDir cache:** `_okDirCache` — okDir scan + byte comparisons run once per session, invalidated by Shift+F5.
 - **Duplicate state:** `_dupeGroups` (`Dictionary<string, List<FileInfo>>`) and `_alreadyInOkPaths` (`HashSet<string>`) are fields updated each refresh; used by `ListContent` to log peer details on selection.
+- **Profile UI state:** Main-window checkbox state for `On Top`, `Keep Focus`, `Autoplay`, and `Show dupez only` is persisted per profile in `HKCU\Software\LezyFileBrowser\Profiles\<ProfileName>`. `Full Screen` remains time-driven and is not persisted.
 - **Pending delete count:** Title bar shows `DEL pending N` when soft-deletes are queued; updated by timer tick.
 
 ## Build
@@ -110,9 +111,11 @@ dotnet build LezyFileBrowserNet10.sln          # Debug (default)
 dotnet build LezyFileBrowserNet10.sln -c Release  # Release → c:\bin\toolz\
 ```
 
+Always launch `.\rebuild.cmd` too when changes are made.
 Release output goes directly to `c:\bin\toolz\` (no framework subfolder).
 
 ## Git Conventions
 
 - No AI/Claude attribution in commit messages.
 - Commit after each logical change; keep AGENTS.md up to date.
+

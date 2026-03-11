@@ -30,8 +30,11 @@ namespace LezyFileBrowser
         private long MIN_FILE_SIZE_MB;
 
         private string _activeProfileName;
-        private MenuStrip           _menuStrip;
-        private ToolStripMenuItem   _menuItemProfiles;
+        private Profile _activeProfile;
+        private System.Threading.Mutex _profileMutex;
+        private Button           _btnProfiles;
+        private ContextMenuStrip _profilesMenu;
+        private bool _suppressCheckboxStateSave;
 
         private static Color ParseColor(string value)
         {
@@ -88,7 +91,10 @@ namespace LezyFileBrowser
         {
             InitializeComponent();
             EnableDoubleBuffer(lstFiles);
-            BuildMenuStrip();
+            ckOnTop.CheckedChanged += MainCheckbox_CheckedChanged;
+            ckKeepFocus.CheckedChanged += MainCheckbox_CheckedChanged;
+            ckAutoplay.CheckedChanged += MainCheckbox_CheckedChanged;
+            ckShowDupesOnly.CheckedChanged += MainCheckbox_CheckedChanged;
         }
 
         private void MainForm_Activated(object sender, EventArgs e)
@@ -168,9 +174,33 @@ namespace LezyFileBrowser
             }
 
             ApplyProfile(profile);
+
+            // Claim per-profile mutex — prevents launching the same profile twice
+            _profileMutex = new System.Threading.Mutex(
+                initiallyOwned: true, name: ProfileRegistry.MutexName(profile.Name), out bool isNew);
+            if (!isNew)
+            {
+                _profileMutex.Close();
+                _profileMutex = null;
+                MessageBox.Show(
+                    $"Profile \"{profile.Name}\" is already open in another window.",
+                    "Already Running", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                Environment.Exit(0);
+                return;
+            }
+
             ProfileRegistry.SetLastProfile(profile.Name);
             Text = $"LezyFileBrowser — {_activeProfileName}";
-            RefreshProfilesMenu();
+
+            _profilesMenu = new ContextMenuStrip();
+            _btnProfiles  = new Button
+            {
+                Text     = "Profiles ▾",
+                Size     = new Size(75, 23),
+                Location = new Point(7, 211),
+            };
+            _btnProfiles.Click += (s, e) => { RefreshProfilesMenu(); _profilesMenu.Show(_btnProfiles, new Point(0, _btnProfiles.Height)); };
+            grpBottom.Controls.Add(_btnProfiles);
 
             MIN_FILE_SIZE_BYTES = MIN_FILE_SIZE_MB * 1024 * 1024;
 
@@ -908,39 +938,43 @@ namespace LezyFileBrowser
             RefreshItemsListing();
         }
 
-        private static string RegSubKey(string dir) =>
-            @"Software\LezyFileBrowser\" +
-            dir.Replace(':', '_').Replace('\\', '_').Replace('/', '_');
-
         private void LoadCheckboxState()
         {
-            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RegSubKey(inputDir));
-            if (key != null)
+            _suppressCheckboxStateSave = true;
+            try
             {
-                ckFullScreen.Checked   = (string)key.GetValue("FullScreen",   "0") == "1";
-                ckOnTop.Checked        = (string)key.GetValue("OnTop",        "0") == "1";
-                ckKeepFocus.Checked    = (string)key.GetValue("KeepFocus",    "1") == "1";
-                ckAutoplay.Checked     = (string)key.GetValue("Autoplay",     "0") == "1";
-                ckShowDupesOnly.Checked = (string)key.GetValue("ShowDupesOnly", "0") == "1";
-            }
-            else
-            {
-                // First run for this inputDir — derive FullScreen from time-of-day window
+                ckOnTop.Checked         = _activeProfile != null && _activeProfile.OnTop;
+                ckKeepFocus.Checked     = _activeProfile == null || _activeProfile.KeepFocus;
+                ckAutoplay.Checked      = _activeProfile == null || _activeProfile.Autoplay;
+                ckShowDupesOnly.Checked = _activeProfile != null && _activeProfile.ShowDupesOnly;
+
+                // FullScreen remains time-driven and is not persisted.
                 int now      = DateTime.Now.Hour * 100 + DateTime.Now.Minute;
                 int fsBefore = int.Parse(ConfigurationManager.AppSettings["FS_HHMM_BEFORE"]);
                 int fsAfter  = int.Parse(ConfigurationManager.AppSettings["FS_HHMM_AFTER"]);
                 ckFullScreen.Checked = now < fsBefore || now >= fsAfter;
             }
+            finally
+            {
+                _suppressCheckboxStateSave = false;
+            }
         }
 
         private void SaveCheckboxState()
         {
-            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(RegSubKey(inputDir));
-            key.SetValue("FullScreen",    ckFullScreen.Checked    ? "1" : "0");
-            key.SetValue("OnTop",         ckOnTop.Checked         ? "1" : "0");
-            key.SetValue("KeepFocus",     ckKeepFocus.Checked     ? "1" : "0");
-            key.SetValue("Autoplay",      ckAutoplay.Checked      ? "1" : "0");
-            key.SetValue("ShowDupesOnly", ckShowDupesOnly.Checked ? "1" : "0");
+            if (_suppressCheckboxStateSave || _activeProfile == null)
+                return;
+
+            _activeProfile.OnTop         = ckOnTop.Checked;
+            _activeProfile.KeepFocus     = ckKeepFocus.Checked;
+            _activeProfile.Autoplay      = ckAutoplay.Checked;
+            _activeProfile.ShowDupesOnly = ckShowDupesOnly.Checked;
+            ProfileRegistry.Save(_activeProfile);
+        }
+
+        private void MainCheckbox_CheckedChanged(object sender, EventArgs e)
+        {
+            SaveCheckboxState();
         }
 
         private void LaunchItem(bool useAltPlayer, bool fullScreen)
@@ -1214,6 +1248,9 @@ namespace LezyFileBrowser
 
             if (inPlaceBrowsing)
                 fileOperations.SaveHistory();
+
+            try { _profileMutex?.ReleaseMutex(); } catch { }
+            _profileMutex?.Close();
         }
 
         private void btnDeleteDir_Click(object sender, EventArgs e)
@@ -1261,6 +1298,7 @@ namespace LezyFileBrowser
 
         private void ApplyProfile(Profile p)
         {
+            _activeProfile     = p;
             _activeProfileName = p.Name;
             inputDir           = p.InputDir;
             okDir              = p.OkDir;
@@ -1274,19 +1312,9 @@ namespace LezyFileBrowser
             // moveWithRobocopy is resolved later in MainForm_Load (mount-point detection)
         }
 
-        private void BuildMenuStrip()
-        {
-            _menuStrip        = new MenuStrip();
-            _menuItemProfiles = new ToolStripMenuItem("Profiles");
-            _menuItemProfiles.DropDownOpening += (s, e) => RefreshProfilesMenu();
-            _menuStrip.Items.Add(_menuItemProfiles);
-            Controls.Add(_menuStrip);
-            MainMenuStrip = _menuStrip;
-        }
-
         private void RefreshProfilesMenu()
         {
-            _menuItemProfiles.DropDownItems.Clear();
+            _profilesMenu.Items.Clear();
 
             var manage = new ToolStripMenuItem("Manage Profiles...");
             manage.Font  = new Font(manage.Font, FontStyle.Bold);
@@ -1295,25 +1323,49 @@ namespace LezyFileBrowser
                 using var dlg = new ProfileManagerForm(_activeProfileName, startupMode: false);
                 dlg.ShowDialog(this);
             };
-            _menuItemProfiles.DropDownItems.Add(manage);
-            _menuItemProfiles.DropDownItems.Add(new ToolStripSeparator());
+            _profilesMenu.Items.Add(manage);
+            _profilesMenu.Items.Add(new ToolStripSeparator());
 
             foreach (var p in ProfileRegistry.LoadAll())
             {
                 var isCurrent = string.Equals(p.Name, _activeProfileName, StringComparison.OrdinalIgnoreCase);
-                var item = new ToolStripMenuItem(isCurrent ? $"● {p.Name}" : p.Name);
-                if (isCurrent) item.Font = new Font(item.Font, FontStyle.Bold);
-                if (!string.IsNullOrEmpty(p.Description))
-                    item.ToolTipText = p.Description;
+                string prefix = isCurrent ? "● " : "  ";
+                string tip    = string.IsNullOrEmpty(p.Description) ? null : p.Description;
 
-                var captured = p.Name;
-                item.Click += (s, e) => LaunchProfileNewWindow(captured);
-                _menuItemProfiles.DropDownItems.Add(item);
+                var itemExit = new ToolStripMenuItem($"{prefix}{p.Name}");
+                if (isCurrent)   itemExit.Font = new Font(itemExit.Font, FontStyle.Bold);
+                itemExit.ToolTipText = (tip != null ? tip + "\n" : "") + "Launch and exit this window";
+
+                var itemStay = new ToolStripMenuItem($"  └ {p.Name}  [stay]");
+                itemStay.ToolTipText = (tip != null ? tip + "\n" : "") + "Launch and keep this window open";
+
+                if (isCurrent)
+                {
+                    itemExit.Enabled = false;
+                    itemStay.Enabled = false;
+                }
+                else
+                {
+                    var captured = p.Name;
+                    itemExit.Click += (s, e) => LaunchProfileNewWindow(captured, exitCurrent: true);
+                    itemStay.Click += (s, e) => LaunchProfileNewWindow(captured, exitCurrent: false);
+                }
+
+                _profilesMenu.Items.Add(itemExit);
+                _profilesMenu.Items.Add(itemStay);
             }
         }
 
-        private void LaunchProfileNewWindow(string profileName)
+        private void LaunchProfileNewWindow(string profileName, bool exitCurrent)
         {
+            // Prevent launching a profile that's already running — focus its window instead
+            if (System.Threading.Mutex.TryOpenExisting(ProfileRegistry.MutexName(profileName), out var existing))
+            {
+                existing.Close();
+                Util.FocusProfileWindow(profileName);
+                return;
+            }
+
             var proc = new System.Diagnostics.Process
             {
                 StartInfo = new System.Diagnostics.ProcessStartInfo
@@ -1324,6 +1376,18 @@ namespace LezyFileBrowser
                 }
             };
             proc.Start();
+
+            if (exitCurrent)
+            {
+                var deadline = DateTime.UtcNow.AddSeconds(15);
+                while (proc.MainWindowHandle == IntPtr.Zero && DateTime.UtcNow < deadline)
+                {
+                    System.Threading.Thread.Sleep(200);
+                    proc.Refresh();
+                    Application.DoEvents();
+                }
+                Application.Exit();
+            }
         }
     }
 
@@ -1333,3 +1397,5 @@ namespace LezyFileBrowser
         public DateTime QueuedAt { get; set; }
     }
 }
+
+

@@ -112,6 +112,38 @@ namespace LezyFileBrowser
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool GetVolumePathName(string lpszFileName, StringBuilder lpszVolumePathName, uint cchBufferLength);
 
+        [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
+        [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        private const int SW_RESTORE = 9;
+
+        // Restore + focus a window by handle.
+        public static void FocusWindow(IntPtr hWnd)
+        {
+            ShowWindow(hWnd, SW_RESTORE);
+            SetForegroundWindow(hWnd);
+        }
+
+        // Find and focus a LezyFileBrowser window whose title matches the profile name.
+        // Returns true if found.
+        public static bool FocusProfileWindow(string profileName)
+        {
+            string expected = $"LezyFileBrowser — {profileName}";
+            string exeName  = System.IO.Path.GetFileNameWithoutExtension(
+                System.Windows.Forms.Application.ExecutablePath);
+
+            foreach (var proc in System.Diagnostics.Process.GetProcessesByName(exeName))
+            {
+                if (proc.MainWindowHandle != IntPtr.Zero &&
+                    string.Equals(proc.MainWindowTitle, expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    FocusWindow(proc.MainWindowHandle);
+                    return true;
+                }
+            }
+            return false;
+        }
+
         // Returns the volume mount point for the given path (e.g. "C:\", "D:\Mounts\Data\").
         // Handles NTFS mount points correctly, not just drive letters.
         public static string GetVolumeMountPoint(string path)

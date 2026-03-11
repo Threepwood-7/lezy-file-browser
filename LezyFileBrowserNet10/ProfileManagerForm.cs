@@ -658,6 +658,14 @@ namespace LezyFileBrowser
                     MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
 
+            // Prevent launching a profile that's already running — focus its window instead
+            if (System.Threading.Mutex.TryOpenExisting(ProfileRegistry.MutexName(p.Name), out var existing))
+            {
+                existing.Close();
+                Util.FocusProfileWindow(p.Name);
+                return;
+            }
+
             var proc = new Process
             {
                 StartInfo = new ProcessStartInfo

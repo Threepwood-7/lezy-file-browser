@@ -44,6 +44,10 @@ namespace LezyFileBrowser
                 NoCache          = (int)(key.GetValue("NoCache",          0)  ) != 0,
                 NoDupeCheck      = (int)(key.GetValue("NoDupeCheck",      0)  ) != 0,
                 ProfileLog       = (int)(key.GetValue("ProfileLog",       0)  ) != 0,
+                OnTop            = (int)(key.GetValue("OnTop",            0)  ) != 0,
+                KeepFocus        = (int)(key.GetValue("KeepFocus",        1)  ) != 0,
+                Autoplay         = (int)(key.GetValue("Autoplay",         1)  ) != 0,
+                ShowDupesOnly    = (int)(key.GetValue("ShowDupesOnly",    0)  ) != 0,
             };
         }
 
@@ -67,6 +71,10 @@ namespace LezyFileBrowser
             key.SetValue("NoCache",          p.NoCache     ? 1 : 0,       RegistryValueKind.DWord);
             key.SetValue("NoDupeCheck",      p.NoDupeCheck ? 1 : 0,       RegistryValueKind.DWord);
             key.SetValue("ProfileLog",       p.ProfileLog  ? 1 : 0,       RegistryValueKind.DWord);
+            key.SetValue("OnTop",            p.OnTop       ? 1 : 0,       RegistryValueKind.DWord);
+            key.SetValue("KeepFocus",        p.KeepFocus   ? 1 : 0,       RegistryValueKind.DWord);
+            key.SetValue("Autoplay",         p.Autoplay    ? 1 : 0,       RegistryValueKind.DWord);
+            key.SetValue("ShowDupesOnly",    p.ShowDupesOnly ? 1 : 0,     RegistryValueKind.DWord);
         }
 
         public static void Delete(string name) =>
@@ -85,5 +93,15 @@ namespace LezyFileBrowser
             using var key = Registry.CurrentUser.CreateSubKey(BaseKey);
             key.SetValue("LastProfile", name ?? "", RegistryValueKind.String);
         }
+
+        // ── Mutex ─────────────────────────────────────────────────────────────
+
+        // Named mutex used to detect whether a profile is already running.
+        public static string MutexName(string profileName)
+        {
+            var safe = System.Text.RegularExpressions.Regex.Replace(profileName ?? "", @"[^\w]", "_");
+            return $"Local\\LezyFileBrowser_{safe}";
+        }
     }
 }
+

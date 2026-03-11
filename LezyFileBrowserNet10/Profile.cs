@@ -20,6 +20,10 @@ namespace LezyFileBrowser
         public bool   NoCache          { get; set; } = false;
         public bool   NoDupeCheck      { get; set; } = false;
         public bool   ProfileLog       { get; set; } = false;
+        public bool   OnTop            { get; set; } = false;
+        public bool   KeepFocus        { get; set; } = true;
+        public bool   Autoplay         { get; set; } = true;
+        public bool   ShowDupesOnly    { get; set; } = false;
 
         public Profile Clone(string newName) => new Profile
         {
@@ -35,6 +39,10 @@ namespace LezyFileBrowser
             NoCache          = NoCache,
             NoDupeCheck      = NoDupeCheck,
             ProfileLog       = ProfileLog,
+            OnTop            = OnTop,
+            KeepFocus        = KeepFocus,
+            Autoplay         = Autoplay,
+            ShowDupesOnly    = ShowDupesOnly,
         };
     }
 }
