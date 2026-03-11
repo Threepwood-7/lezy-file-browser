@@ -29,10 +29,9 @@ namespace LezyFileBrowser
         private int MAX_LIST_ITEMS;
         private long MIN_FILE_SIZE_MB;
 
-        private static string Env(string name, string fallback = null) =>
-            Environment.GetEnvironmentVariable(name)
-            ?? ConfigurationManager.AppSettings[name]
-            ?? fallback;
+        private string _activeProfileName;
+        private MenuStrip           _menuStrip;
+        private ToolStripMenuItem   _menuItemProfiles;
 
         private static Color ParseColor(string value)
         {
@@ -89,6 +88,7 @@ namespace LezyFileBrowser
         {
             InitializeComponent();
             EnableDoubleBuffer(lstFiles);
+            BuildMenuStrip();
         }
 
         private void MainForm_Activated(object sender, EventArgs e)
@@ -129,54 +129,53 @@ namespace LezyFileBrowser
 
         private void MainForm_Load(object sender, EventArgs e)
         {
-            // Read env vars — falls back to App.config key of same name, then hardcoded default
-            inputDir         = Env("X_INPUT_DIR");
-            okDir            = Env("X_OK_DIR");
-            sortDirection    = int.Parse(Env("X_SORT_DIR", "1"));
-            inPlaceBrowsing  = bool.Parse(Env("X_INPLACE_BROWSING", "false"));
-            noCache          = bool.Parse(Env("X_NO_CACHE",      "false"));
-            noDupeCheck      = bool.Parse(Env("X_NO_DUPE_CHECK", "false"));
-            profileLog       = bool.Parse(Env("X_PROFILE_LOG",   "false"));
-            moveWithRobocopy = bool.Parse(Env("X_MOVE_WITH_ROBOCOPY", "true"));
-            MAX_LIST_ITEMS   = int.Parse(Env("X_MAX_LIST_ITEMS", int.MaxValue.ToString()));
-            MIN_FILE_SIZE_MB = long.Parse(Env("X_MIN_FILE_SIZE_MB", "99"));
-
-            // Read App.config settings
-            MIN_FILE_SIZE_BYTES          = MIN_FILE_SIZE_MB * 1024 * 1024;
+            // ── Global settings (App.config) ────────────────────────────────
             MAX_FILES_IN_DIR_TO_DELETE   = int.Parse(ConfigurationManager.AppSettings["MAX_FILES_IN_DIR_TO_DELETE"]);
             MIN_DIR_SIZE_FOR_COUNT_BYTES = long.Parse(ConfigurationManager.AppSettings["MIN_DIR_SIZE_FOR_COUNT_KB"]) * 1024;
-            ioRetryDelayMs    = int.Parse(ConfigurationManager.AppSettings["IO_RETRY_DELAY_MS"]);
+            ioRetryDelayMs       = int.Parse(ConfigurationManager.AppSettings["IO_RETRY_DELAY_MS"]);
             dupeCheckHeadMb      = int.Parse(ConfigurationManager.AppSettings["DUPE_CHECK_HEAD_MB"]);
             dupeCheckTailMb      = int.Parse(ConfigurationManager.AppSettings["DUPE_CHECK_TAIL_MB"]);
             similarNameMinTokens = int.Parse(ConfigurationManager.AppSettings["SIMILAR_NAME_MIN_TOKENS"]);
             videoExtensions      = ConfigurationManager.AppSettings["VIDEO_EXTENSIONS"]
                 .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+            scriptSabnzbd        = ConfigurationManager.AppSettings["SCRIPT_SABNZBD"];
+            browserExe           = ConfigurationManager.AppSettings["BROWSER_EXE"];
+            btSearchUrl1         = ConfigurationManager.AppSettings["BT_SEARCH_URL_1"];
+            btSearchUrl2         = ConfigurationManager.AppSettings["BT_SEARCH_URL_2"];
+            relSuffix            = ConfigurationManager.AppSettings["REL_SUFFIX"];
+            pendingDeletePollMs  = int.Parse(ConfigurationManager.AppSettings["PENDING_DELETE_POLL_MS"]);
+            fileOpQueuePollMs    = int.Parse(ConfigurationManager.AppSettings["FILEOP_QUEUE_POLL_MS"]);
+            dupeCheckBufSize     = int.Parse(ConfigurationManager.AppSettings["DUPE_CHECK_BUFFER_SIZE"]);
+            colorAlreadySaved    = ParseColor(ConfigurationManager.AppSettings["COLOR_ALREADY_SAVED"]);
+            colorDupe            = ParseColor(ConfigurationManager.AppSettings["COLOR_DUPE"]);
+            colorSimilarName     = ParseColor(ConfigurationManager.AppSettings["COLOR_SIMILAR_NAME"]);
 
-            scriptSabnzbd     = ConfigurationManager.AppSettings["SCRIPT_SABNZBD"];
-            browserExe        = ConfigurationManager.AppSettings["BROWSER_EXE"];
-            btSearchUrl1      = ConfigurationManager.AppSettings["BT_SEARCH_URL_1"];
-            btSearchUrl2      = ConfigurationManager.AppSettings["BT_SEARCH_URL_2"];
-            relSuffix         = ConfigurationManager.AppSettings["REL_SUFFIX"];
-            pendingDeletePollMs = int.Parse(ConfigurationManager.AppSettings["PENDING_DELETE_POLL_MS"]);
-            fileOpQueuePollMs   = int.Parse(ConfigurationManager.AppSettings["FILEOP_QUEUE_POLL_MS"]);
-            dupeCheckBufSize    = int.Parse(ConfigurationManager.AppSettings["DUPE_CHECK_BUFFER_SIZE"]);
-            colorAlreadySaved   = ParseColor(ConfigurationManager.AppSettings["COLOR_ALREADY_SAVED"]);
-            colorDupe           = ParseColor(ConfigurationManager.AppSettings["COLOR_DUPE"]);
-            colorSimilarName    = ParseColor(ConfigurationManager.AppSettings["COLOR_SIMILAR_NAME"]);
+            // ── Profile loading ──────────────────────────────────────────────
+            var args = Environment.GetCommandLineArgs();
+            string requestedProfileName = args.Length > 1 ? args[1] : ProfileRegistry.GetLastProfile();
+            Profile profile = requestedProfileName != null ? ProfileRegistry.Load(requestedProfileName) : null;
 
-            // Validate required directories
-
-            // Validate required directories
-            if (string.IsNullOrWhiteSpace(inputDir) || string.IsNullOrWhiteSpace(okDir))
+            if (profile == null)
             {
-                MessageBox.Show(
-                    $"X_INPUT_DIR and X_OK_DIR environment variables must be set.\n\n" +
-                    $"X_INPUT_DIR = [{inputDir ?? "not set"}]\n" +
-                    $"X_OK_DIR    = [{okDir    ?? "not set"}]",
-                    "Startup Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                Environment.Exit(1);
-                return;
+                // First run or unknown profile — show manager in startup mode
+                using var dlg = new ProfileManagerForm(currentProfileName: null, startupMode: true);
+                if (dlg.ShowDialog(this) != System.Windows.Forms.DialogResult.OK || dlg.SelectedProfile == null)
+                {
+                    Environment.Exit(0);
+                    return;
+                }
+                profile = dlg.SelectedProfile;
             }
+
+            ApplyProfile(profile);
+            ProfileRegistry.SetLastProfile(profile.Name);
+            Text = $"LezyFileBrowser — {_activeProfileName}";
+            RefreshProfilesMenu();
+
+            MIN_FILE_SIZE_BYTES = MIN_FILE_SIZE_MB * 1024 * 1024;
+
+            // robocopyOverride for mount-point detection block below
+            var robocopyOverride = string.IsNullOrEmpty(profile.MoveWithRobocopy) ? null : profile.MoveWithRobocopy;
 
             LogMessage(
                 "\r\n\r\n" +
@@ -207,24 +206,46 @@ namespace LezyFileBrowser
             Util.DriveFreeBytes(inputDir, out inputFree, out inputTotal);
             Util.DriveFreeBytes(okDir, out okFree, out okTotal);
 
+            // Detect volume mount points (handles NTFS mount points, not just drive letters)
+            var inputMount = Util.GetVolumeMountPoint(inputDir);
+            var okMount    = Util.GetVolumeMountPoint(okDir);
+            bool sameVolume = string.Equals(inputMount, okMount, StringComparison.OrdinalIgnoreCase);
+
+            string robocopyReason;
+            if (robocopyOverride != null)
+            {
+                robocopyReason = $"X_MOVE_WITH_ROBOCOPY override = {robocopyOverride}";
+            }
+            else
+            {
+                moveWithRobocopy = !sameVolume;
+                robocopyReason = sameVolume
+                    ? "auto: same volume → Directory.Move"
+                    : "auto: different volumes → Robocopy";
+            }
+
             var sortLabel = SortLabel();
 
             LogMessage(
                 "\r\n" +
                 "  --- Directories -------------------------------------------------------\r\n" +
                 $"  Input dir    [ {inputDir} ]\r\n" +
+                $"               mount point  [ {inputMount} ]\r\n" +
                 $"               free {inputFree / 1024 / 1024 / 1024} GB / total {inputTotal / 1024 / 1024 / 1024} GB\r\n" +
                 $"  OK dir       [ {okDir} ]\r\n" +
+                $"               mount point  [ {okMount} ]\r\n" +
                 $"               free {okFree / 1024 / 1024 / 1024} GB / total {okTotal / 1024 / 1024 / 1024} GB\r\n" +
+                $"               same volume  {sameVolume}\r\n" +
                 "\r\n" +
                 "  --- Configuration -----------------------------------------------------\r\n" +
+                $"  Profile          {_activeProfileName}\r\n" +
                 $"  Sort             {sortLabel}\r\n" +
                 $"  Min file size    {MIN_FILE_SIZE_MB} MB\r\n" +
                 $"  Max list items   {(MAX_LIST_ITEMS == int.MaxValue ? "unlimited" : MAX_LIST_ITEMS.ToString())}\r\n" +
                 $"  In-place browse  {inPlaceBrowsing}\r\n" +
                 $"  No cache         {noCache}\r\n" +
                 $"  No dupe check    {noDupeCheck}\r\n" +
-                $"  Robocopy move    {moveWithRobocopy}\r\n" +
+                $"  Robocopy move    {moveWithRobocopy}  ({robocopyReason})\r\n" +
                 "  -----------------------------------------------------------------------\r\n"
             );
 
@@ -235,9 +256,10 @@ namespace LezyFileBrowser
             if (!Directory.Exists(inputDir) || !Directory.Exists(okDir))
             {
                 MessageBox.Show(
-                    $"Directories must exist.\n\n" +
-                    $"X_INPUT_DIR = [{inputDir}]  exists={Directory.Exists(inputDir)}\n" +
-                    $"X_OK_DIR    = [{okDir}]  exists={Directory.Exists(okDir)}",
+                    $"Profile \"{_activeProfileName}\": directories must exist.\n\n" +
+                    $"Input Dir = [{inputDir}]  exists={Directory.Exists(inputDir)}\n" +
+                    $"OK Dir    = [{okDir}]  exists={Directory.Exists(okDir)}\n\n" +
+                    $"Open the Profile Manager (Profiles menu) to fix the paths.",
                     "Startup Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Environment.Exit(1);
                 return;
@@ -1233,6 +1255,75 @@ namespace LezyFileBrowser
         private void btnLaunchItem_Click(object sender, EventArgs e)
         {
             LaunchItem(false, ckFullScreen.Checked);
+        }
+
+        // ── Profile support ───────────────────────────────────────────────
+
+        private void ApplyProfile(Profile p)
+        {
+            _activeProfileName = p.Name;
+            inputDir           = p.InputDir;
+            okDir              = p.OkDir;
+            sortDirection      = p.SortDir;
+            inPlaceBrowsing    = p.InplaceBrowsing;
+            noCache            = p.NoCache;
+            noDupeCheck        = p.NoDupeCheck;
+            profileLog         = p.ProfileLog;
+            MAX_LIST_ITEMS     = p.MaxListItems;
+            MIN_FILE_SIZE_MB   = p.MinFileSizeMb;
+            // moveWithRobocopy is resolved later in MainForm_Load (mount-point detection)
+        }
+
+        private void BuildMenuStrip()
+        {
+            _menuStrip        = new MenuStrip();
+            _menuItemProfiles = new ToolStripMenuItem("Profiles");
+            _menuItemProfiles.DropDownOpening += (s, e) => RefreshProfilesMenu();
+            _menuStrip.Items.Add(_menuItemProfiles);
+            Controls.Add(_menuStrip);
+            MainMenuStrip = _menuStrip;
+        }
+
+        private void RefreshProfilesMenu()
+        {
+            _menuItemProfiles.DropDownItems.Clear();
+
+            var manage = new ToolStripMenuItem("Manage Profiles...");
+            manage.Font  = new Font(manage.Font, FontStyle.Bold);
+            manage.Click += (s, e) =>
+            {
+                using var dlg = new ProfileManagerForm(_activeProfileName, startupMode: false);
+                dlg.ShowDialog(this);
+            };
+            _menuItemProfiles.DropDownItems.Add(manage);
+            _menuItemProfiles.DropDownItems.Add(new ToolStripSeparator());
+
+            foreach (var p in ProfileRegistry.LoadAll())
+            {
+                var isCurrent = string.Equals(p.Name, _activeProfileName, StringComparison.OrdinalIgnoreCase);
+                var item = new ToolStripMenuItem(isCurrent ? $"● {p.Name}" : p.Name);
+                if (isCurrent) item.Font = new Font(item.Font, FontStyle.Bold);
+                if (!string.IsNullOrEmpty(p.Description))
+                    item.ToolTipText = p.Description;
+
+                var captured = p.Name;
+                item.Click += (s, e) => LaunchProfileNewWindow(captured);
+                _menuItemProfiles.DropDownItems.Add(item);
+            }
+        }
+
+        private void LaunchProfileNewWindow(string profileName)
+        {
+            var proc = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName        = Application.ExecutablePath,
+                    Arguments       = $"\"{profileName}\"",
+                    UseShellExecute = false,
+                }
+            };
+            proc.Start();
         }
     }
 

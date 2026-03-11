@@ -108,6 +108,21 @@ namespace LezyFileBrowser
         out ulong lpTotalNumberOfBytes,
         out ulong lpTotalNumberOfFreeBytes);
 
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetVolumePathName(string lpszFileName, StringBuilder lpszVolumePathName, uint cchBufferLength);
+
+        // Returns the volume mount point for the given path (e.g. "C:\", "D:\Mounts\Data\").
+        // Handles NTFS mount points correctly, not just drive letters.
+        public static string GetVolumeMountPoint(string path)
+        {
+            var sb = new StringBuilder(261);
+            if (GetVolumePathName(path, sb, (uint)sb.Capacity))
+                return sb.ToString();
+            // Fallback: use Path.GetPathRoot (drive-letter only, no mount point awareness)
+            return Path.GetPathRoot(path);
+        }
+
         public static bool DriveFreeBytes(string folderName, out ulong freespace, out ulong totalspace)
         {
             freespace = 0;
